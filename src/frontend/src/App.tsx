@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -21,8 +22,9 @@ import {
   RotateCcw,
   Undo2,
   Upload,
+  X,
 } from "lucide-react";
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -100,6 +102,9 @@ const C_IRIS_D = "#0d9488";
 const C_LINE_N = "rgba(239,68,68,0.7)";
 const C_LINE_D = "rgba(249,115,22,0.7)";
 const C_LABEL = "#1e293b";
+
+// Physical print constants
+const MM_TO_PX = 3.7795; // 1mm at 96dpi
 
 // ─── Pure helpers ───────────────────────────────────────────────────────────
 
@@ -223,12 +228,381 @@ function reducer(state: AppState, action: Action): AppState {
   }
 }
 
+// ─── Print Jig Overlay ────────────────────────────────────────────────────────
+
+function PrintJigOverlay({
+  ratioMcIc,
+  jigMm,
+  onClose,
+}: {
+  ratioMcIc: number;
+  jigMm: string;
+  onClose: () => void;
+}) {
+  const mmVal = Number.parseFloat(jigMm);
+  const hasScale = !Number.isNaN(mmVal) && mmVal > 0;
+  const lineWidthPx = hasScale ? mmVal * MM_TO_PX : 280;
+  const irisFromMcMm = hasScale ? (ratioMcIc / 100) * mmVal : null;
+  const crosshairX = ratioMcIc / 100;
+  // Crosshair vertical arm: 20mm tall
+  const armPx = 20 * MM_TO_PX;
+  // Circle diameter: 4mm
+  const circleR = (4 * MM_TO_PX) / 2;
+
+  // Inject print styles
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.id = "jig-print-style";
+    style.textContent = `
+      @media print {
+        body * { visibility: hidden !important; }
+        #jig-print-area, #jig-print-area * { visibility: visible !important; }
+        #jig-print-area { position: fixed; top: 0; left: 0; width: 100%; }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.getElementById("jig-print-style")?.remove();
+    };
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-white flex flex-col items-center justify-center"
+      data-ocid="jig.modal"
+    >
+      {/* Close button */}
+      <button
+        type="button"
+        onClick={onClose}
+        className="print:hidden absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+        data-ocid="jig.close_button"
+        aria-label="Close jig"
+      >
+        <X className="w-4 h-4 text-gray-600" />
+      </button>
+
+      {/* Print button */}
+      <div className="print:hidden mb-6 flex items-center gap-3">
+        <h2 className="text-lg font-bold text-gray-800">
+          Printable Jig Preview
+        </h2>
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="flex items-center gap-2 px-4 py-2 rounded-md bg-gray-900 text-white text-sm font-medium hover:bg-gray-700 transition-colors"
+          data-ocid="jig.primary_button"
+        >
+          <Printer className="w-4 h-4" /> Print Jig
+        </button>
+      </div>
+
+      {/* Jig print area */}
+      <div
+        id="jig-print-area"
+        className="flex flex-col items-center"
+        style={{ fontFamily: "'Arial', sans-serif" }}
+      >
+        {/* Title */}
+        <div className="text-center mb-6">
+          <h1
+            style={{
+              fontSize: "16px",
+              fontWeight: "bold",
+              color: "#000",
+              marginBottom: "4px",
+              letterSpacing: "0.05em",
+              textTransform: "uppercase",
+            }}
+          >
+            Iris Positioning Jig — Defect Eye
+          </h1>
+          <p style={{ fontSize: "11px", color: "#444", margin: 0 }}>
+            Align MC and LC marks to medial and lateral canthus
+          </p>
+        </div>
+
+        {/* Cut-out border container */}
+        <div
+          style={{
+            border: "2px dashed #222",
+            padding: "28px 36px",
+            background: "#fff",
+            position: "relative",
+            display: "inline-block",
+          }}
+        >
+          {/* Corner cut marks */}
+          {(
+            [
+              { top: -1, left: -1, id: "tl" },
+              { top: -1, right: -1, id: "tr" },
+              { bottom: -1, left: -1, id: "bl" },
+              { bottom: -1, right: -1, id: "br" },
+            ] as Array<{
+              id: string;
+              top?: number;
+              right?: number;
+              bottom?: number;
+              left?: number;
+            }>
+          ).map((pos) => (
+            <div
+              key={pos.id}
+              style={{
+                position: "absolute",
+                width: "8px",
+                height: "8px",
+                borderTop: pos.top !== undefined ? "2px solid #222" : "none",
+                borderBottom:
+                  pos.bottom !== undefined ? "2px solid #222" : "none",
+                borderLeft: pos.left !== undefined ? "2px solid #222" : "none",
+                borderRight:
+                  pos.right !== undefined ? "2px solid #222" : "none",
+                top: pos.top,
+                right: pos.right,
+                bottom: pos.bottom,
+                left: pos.left,
+              }}
+            />
+          ))}
+
+          {/* Jig body */}
+          <div
+            style={{
+              width: `${lineWidthPx}px`,
+              position: "relative",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-start",
+            }}
+          >
+            {/* Labels row */}
+            <div
+              style={{
+                width: "100%",
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: "6px",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "11px",
+                  fontWeight: "bold",
+                  color: "#000",
+                }}
+              >
+                MC
+              </span>
+              <span
+                style={{
+                  fontSize: "11px",
+                  fontWeight: "bold",
+                  color: "#000",
+                }}
+              >
+                LC
+              </span>
+            </div>
+
+            {/* Crosshair + horizontal line area */}
+            <div
+              style={{
+                width: "100%",
+                position: "relative",
+                height: `${armPx + 4}px`,
+              }}
+            >
+              {/* Horizontal canthus line */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: 0,
+                  width: "100%",
+                  height: "2px",
+                  background: "#000",
+                  transform: "translateY(-50%)",
+                }}
+              />
+
+              {/* MC tick */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: 0,
+                  width: "2px",
+                  height: "16px",
+                  background: "#000",
+                  transform: "translate(-50%, -50%)",
+                }}
+              />
+
+              {/* LC tick */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  right: 0,
+                  width: "2px",
+                  height: "16px",
+                  background: "#000",
+                  transform: "translate(50%, -50%)",
+                }}
+              />
+
+              {/* Vertical crosshair arm */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: `${crosshairX * 100}%`,
+                  width: "1px",
+                  height: `${armPx}px`,
+                  background: "#000",
+                  borderLeft: "1px dashed #000",
+                  transform: "translate(-50%, -50%)",
+                }}
+              />
+
+              {/* Iris center circle */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: `${crosshairX * 100}%`,
+                  width: `${circleR * 2}px`,
+                  height: `${circleR * 2}px`,
+                  border: "1.5px solid #000",
+                  borderRadius: "50%",
+                  background: "transparent",
+                  transform: "translate(-50%, -50%)",
+                  zIndex: 2,
+                }}
+              />
+
+              {/* CSS crosshair inside circle — horizontal */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: `${crosshairX * 100}%`,
+                  width: `${circleR * 1.6}px`,
+                  height: "1px",
+                  background: "#000",
+                  transform: "translate(-50%, -50%)",
+                  zIndex: 3,
+                }}
+              />
+
+              {/* CSS crosshair inside circle — vertical */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: `${crosshairX * 100}%`,
+                  width: "1px",
+                  height: `${circleR * 1.6}px`,
+                  background: "#000",
+                  transform: "translate(-50%, -50%)",
+                  zIndex: 3,
+                }}
+              />
+            </div>
+
+            {/* Measurements below */}
+            <div
+              style={{
+                width: "100%",
+                marginTop: "10px",
+                borderTop: "1px solid #ddd",
+                paddingTop: "8px",
+              }}
+            >
+              {irisFromMcMm !== null ? (
+                <p
+                  style={{
+                    fontSize: "11px",
+                    color: "#222",
+                    margin: "0 0 3px 0",
+                    textAlign: "center",
+                  }}
+                >
+                  Iris center: <strong>{irisFromMcMm.toFixed(1)} mm</strong>{" "}
+                  from MC
+                </p>
+              ) : (
+                <p
+                  style={{
+                    fontSize: "10px",
+                    color: "#888",
+                    margin: "0 0 3px 0",
+                    textAlign: "center",
+                    fontStyle: "italic",
+                  }}
+                >
+                  Scale not set — enter actual canthus width for mm values
+                </p>
+              )}
+              <p
+                style={{
+                  fontSize: "11px",
+                  color: "#444",
+                  margin: 0,
+                  textAlign: "center",
+                }}
+              >
+                Position: <strong>{ratioMcIc.toFixed(1)}%</strong> from MC
+              </p>
+              {hasScale && (
+                <p
+                  style={{
+                    fontSize: "10px",
+                    color: "#666",
+                    margin: "3px 0 0",
+                    textAlign: "center",
+                  }}
+                >
+                  Canthus span: <strong>{mmVal} mm</strong>
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <p
+          style={{
+            marginTop: "16px",
+            fontSize: "9px",
+            color: "#aaa",
+            letterSpacing: "0.04em",
+          }}
+        >
+          Generated by Iris Positioner
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ─── Results Panel ────────────────────────────────────────────────────────────
 
 function ResultsPanel({
   points,
   normalEye,
-}: { points: AppPoints; normalEye: "left" | "right" }) {
+  jigMm,
+  onJigMmChange,
+  onPrintJig,
+}: {
+  points: AppPoints;
+  normalEye: "left" | "right";
+  jigMm: string;
+  onJigMmChange: (v: string) => void;
+  onPrintJig: () => void;
+}) {
   const { mcN, lcN, icN, mcD, lcD, icD } = points;
   if (!mcN || !lcN || !icN || !mcD || !lcD || !icD) return null;
 
@@ -329,6 +703,50 @@ function ResultsPanel({
               ({ratioD.toFixed(1)}%) from the medial canthus of the prosthesis
             </p>
           </div>
+
+          <Separator />
+
+          {/* Printed Jig section */}
+          <div>
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+              Printed Jig
+            </p>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor="jig-mm-input"
+                  className="text-xs font-medium text-foreground"
+                >
+                  Actual canthus width (mm)
+                </Label>
+                <Input
+                  id="jig-mm-input"
+                  type="number"
+                  min="1"
+                  max="60"
+                  step="0.5"
+                  placeholder="e.g. 28"
+                  value={jigMm}
+                  onChange={(e) => onJigMmChange(e.target.value)}
+                  className="h-8 text-xs"
+                  data-ocid="jig.input"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Measure the real canthus span with calipers for accurate
+                  scaling.
+                </p>
+              </div>
+              <Button
+                onClick={onPrintJig}
+                className="w-full h-9 text-xs gap-2 text-white"
+                style={{ background: "oklch(var(--primary))" }}
+                data-ocid="jig.open_modal_button"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                Print Jig
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -339,6 +757,8 @@ function ResultsPanel({
 
 export default function App() {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const [showJig, setShowJig] = useState(false);
+  const [jigMm, setJigMm] = useState("");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bgImageRef = useRef<HTMLImageElement | null>(null);
@@ -351,6 +771,14 @@ export default function App() {
   const { step, normalEye, points, bgImageDataUrl } = state;
   const defectEye = normalEye === "left" ? "right" : "left";
   const isPlacingMode = step >= 2 && step <= 6;
+
+  // Compute ratio for jig
+  const ratioMcIc = (() => {
+    const { mcN, lcN, icN } = points;
+    if (!mcN || !lcN || !icN) return 50;
+    const totalN = dist(mcN, lcN);
+    return totalN > 0 ? (dist(mcN, icN) / totalN) * 100 : 50;
+  })();
 
   // Load background image
   useEffect(() => {
@@ -968,11 +1396,26 @@ export default function App() {
 
           {points.icD && (
             <div className="border-t border-border bg-white p-4 print:block overflow-y-auto max-h-72">
-              <ResultsPanel points={points} normalEye={normalEye} />
+              <ResultsPanel
+                points={points}
+                normalEye={normalEye}
+                jigMm={jigMm}
+                onJigMmChange={setJigMm}
+                onPrintJig={() => setShowJig(true)}
+              />
             </div>
           )}
         </main>
       </div>
+
+      {/* Print Jig Overlay */}
+      {showJig && (
+        <PrintJigOverlay
+          ratioMcIc={ratioMcIc}
+          jigMm={jigMm}
+          onClose={() => setShowJig(false)}
+        />
+      )}
     </div>
   );
 }
