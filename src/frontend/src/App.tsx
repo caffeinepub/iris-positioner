@@ -162,7 +162,7 @@ function canvasDrawDot(
   p: Point,
   label: string,
   fill: string,
-  r = 6,
+  r = 3,
 ) {
   ctx.beginPath();
   ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
@@ -904,7 +904,7 @@ export default function App() {
       ctx.strokeStyle = C_IRIS_D;
       ctx.setLineDash([]);
       ctx.stroke();
-      canvasDrawDot(ctx, icD, "IC-D", C_IRIS_D, 5);
+      canvasDrawDot(ctx, icD, "IC-D", C_IRIS_D, 3);
     }
 
     // Proportion annotation
