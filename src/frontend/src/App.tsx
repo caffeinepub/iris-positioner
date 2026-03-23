@@ -22,6 +22,7 @@ import {
   RotateCcw,
   Undo2,
   Upload,
+  WifiOff,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
@@ -248,6 +249,8 @@ function PrintJigOverlay({
   const armPx = 20 * MM_TO_PX;
   // Circle diameter: 4mm
   const circleR = (4 * MM_TO_PX) / 2;
+  // Standard iris diameter: 11.7mm
+  const irisCircleR = (11.7 * MM_TO_PX) / 2;
 
   // Inject print styles
   useEffect(() => {
@@ -411,18 +414,18 @@ function PrintJigOverlay({
               style={{
                 width: "100%",
                 position: "relative",
-                height: `${armPx + 4}px`,
+                height: `${Math.max(armPx + 4, irisCircleR * 2 + 8)}px`,
               }}
             >
-              {/* Horizontal canthus line */}
+              {/* Horizontal canthus line — MC to LC */}
               <div
                 style={{
                   position: "absolute",
                   top: "50%",
                   left: 0,
                   width: "100%",
-                  height: "2px",
-                  background: "#000",
+                  height: "3px",
+                  background: "#1a56db",
                   transform: "translateY(-50%)",
                 }}
               />
@@ -433,9 +436,9 @@ function PrintJigOverlay({
                   position: "absolute",
                   top: "50%",
                   left: 0,
-                  width: "2px",
-                  height: "16px",
-                  background: "#000",
+                  width: "3px",
+                  height: "20px",
+                  background: "#1a56db",
                   transform: "translate(-50%, -50%)",
                 }}
               />
@@ -446,9 +449,9 @@ function PrintJigOverlay({
                   position: "absolute",
                   top: "50%",
                   right: 0,
-                  width: "2px",
-                  height: "16px",
-                  background: "#000",
+                  width: "3px",
+                  height: "20px",
+                  background: "#1a56db",
                   transform: "translate(50%, -50%)",
                 }}
               />
@@ -510,6 +513,22 @@ function PrintJigOverlay({
                   zIndex: 3,
                 }}
               />
+              {/* Iris diameter circle (standard 11.7 mm) */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: `${crosshairX * 100}%`,
+                  width: `${irisCircleR * 2}px`,
+                  height: `${irisCircleR * 2}px`,
+                  border: "1.5px dashed #444",
+                  borderRadius: "50%",
+                  background: "transparent",
+                  transform: "translate(-50%, -50%)",
+                  zIndex: 1,
+                  boxSizing: "border-box",
+                }}
+              />
             </div>
 
             {/* Measurements below */}
@@ -568,6 +587,16 @@ function PrintJigOverlay({
                   Canthus span: <strong>{mmVal} mm</strong>
                 </p>
               )}
+              <p
+                style={{
+                  fontSize: "10px",
+                  color: "#555",
+                  margin: "3px 0 0",
+                  textAlign: "center",
+                }}
+              >
+                Iris diameter circle: <strong>11.7 mm</strong> (dashed)
+              </p>
             </div>
           </div>
         </div>
@@ -759,6 +788,7 @@ export default function App() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [showJig, setShowJig] = useState(false);
   const [jigMm, setJigMm] = useState("");
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bgImageRef = useRef<HTMLImageElement | null>(null);
@@ -771,6 +801,18 @@ export default function App() {
   const { step, normalEye, points, bgImageDataUrl } = state;
   const defectEye = normalEye === "left" ? "right" : "left";
   const isPlacingMode = step >= 2 && step <= 6;
+
+  // Offline detection
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   // Compute ratio for jig
   const ratioMcIc = (() => {
@@ -1065,6 +1107,14 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {/* Offline banner */}
+      {isOffline && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-1.5 flex items-center justify-center gap-2 text-xs text-amber-700 font-medium print:hidden">
+          <WifiOff className="w-3.5 h-3.5" />
+          You are offline — the app is running from cache
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
